@@ -28,14 +28,12 @@ type Category struct {
 
 type Categories []Category
 
-func (cs Categories) PrettyPrint() {
-	for _, category := range cs {
-		fmt.Println("Categoria:", category.Title)
-		fmt.Println("\t↳ Candidatos:", strings.Join(category.Candidates, ", "))
-		fmt.Println("\t↳ Cédulas:")
-		for _, ballot := range category.Ballots {
-			fmt.Println("\t\t↳", strings.Join(ballot, ", "))
-		}
+func (category Category) PrettyPrint() {
+	fmt.Println("Categoria:", category.Title)
+	fmt.Println("\t↳ Candidatos:", strings.Join(category.Candidates, ", "))
+	fmt.Println("\t↳ Cédulas:")
+	for _, ballot := range category.Ballots {
+		fmt.Println("\t\t↳", strings.Join(ballot, ", "))
 	}
 }
 
@@ -48,8 +46,9 @@ func main() {
 	lines := strings.Split(string(content), "\n")
 	categories := parseCategories(lines[0])
 	parseBallots(categories, lines[1:])
-	categories.PrettyPrint()
 	for _, category := range categories {
+		injectCandidates(&category)
+		category.PrettyPrint()
 		winners, honorableMention := determineWinner(category, CandidateVotes{})
 		if winners[0].Votes[0] > winners[1].Votes[0] {
 			fmt.Printf("\nGanhador determinado para a categoria %s!\n", category.Title)
@@ -77,8 +76,12 @@ func parseCategories(headerLine string) Categories {
 		currCategory Category
 	)
 	for _, voteColumn := range headers[1:] {
-		title := categoryTitleRegex.FindStringSubmatch(voteColumn)[1]
-		candidate := categoryCandidateRegex.FindStringSubmatch(voteColumn)[1]
+		title := voteColumn
+		var candidate string
+		if titleMatch := categoryTitleRegex.FindStringSubmatch(voteColumn); len(titleMatch) > 1 {
+			title = categoryTitleRegex.FindStringSubmatch(voteColumn)[1]
+			candidate = categoryCandidateRegex.FindStringSubmatch(voteColumn)[1]
+		}
 		if title != currTitle {
 			if currTitle != "" {
 				categories = append(categories, currCategory)
@@ -89,7 +92,9 @@ func parseCategories(headerLine string) Categories {
 			}
 			currTitle = title
 		}
-		currCategory.Candidates = append(currCategory.Candidates, candidate)
+		if candidate != "" {
+			currCategory.Candidates = append(currCategory.Candidates, candidate)
+		}
 	}
 	categories = append(categories, currCategory)
 
@@ -111,16 +116,19 @@ func parseBallots(categories Categories, voteLines []string) {
 			if len(vote) > 0 {
 				pos, err := strconv.Atoi(vote)
 				if err != nil {
-					panic(err)
+					ballot = append(ballot, vote)
+				} else {
+					ballot[pos-1] = categories[categoryPos].Candidates[votePos]
 				}
-				ballot[pos-1] = categories[categoryPos].Candidates[votePos]
 			}
 			votePos++
-			if votePos == len(currCategory.Candidates) {
+			if votePos >= len(currCategory.Candidates) {
 				currCategory.Ballots = append(currCategory.Ballots, removeEmptyVotes(ballot))
-				ballot = make([]string, len(currCategory.Candidates))
 				categoryPos++
 				votePos = 0
+				if categoryPos < len(categories) {
+					ballot = make([]string, len(categories[categoryPos].Candidates))
+				}
 			}
 		}
 	}
@@ -134,6 +142,19 @@ func removeEmptyVotes(ballot []string) []string {
 		}
 	}
 	return ballot
+}
+
+// Parse candidates from ballots for non-rcv voting
+func injectCandidates(category *Category) {
+	if len(category.Candidates) == 0 {
+		candidates := make(map[string]struct{})
+		for _, ballot := range category.Ballots {
+			candidates[ballot[0]] = struct{}{}
+		}
+		for candidate := range candidates {
+			category.Candidates = append(category.Candidates, candidate)
+		}
+	}
 }
 
 func determineWinner(category Category, honorableMention CandidateVotes) (CandidatesVotes, CandidateVotes) {
