@@ -14,6 +14,7 @@ const (
 )
 
 var (
+	results                *os.File
 	categoryTitleRegex     = regexp.MustCompile(`(.*) \[`)
 	categoryCandidateRegex = regexp.MustCompile(`\[(.*)\]`)
 )
@@ -29,11 +30,11 @@ type Category struct {
 type Categories []Category
 
 func (category Category) PrettyPrint() {
-	fmt.Println("Categoria:", category.Title)
-	fmt.Println("\t↳ Candidatos:", strings.Join(category.Candidates, ", "))
-	fmt.Println("\t↳ Cédulas:")
+	fmt.Fprintln(results, "Categoria:", category.Title)
+	fmt.Fprintln(results, "\t↳ Candidatos:", strings.Join(category.Candidates, ", "))
+	fmt.Fprintln(results, "\t↳ Cédulas:")
 	for _, ballot := range category.Ballots {
-		fmt.Println("\t\t↳", strings.Join(ballot, ", "))
+		fmt.Fprintln(results, "\t\t↳", strings.Join(ballot, ", "))
 	}
 }
 
@@ -43,6 +44,12 @@ func main() {
 		panic(err)
 	}
 
+	results, err = os.Create("results.txt")
+	if err != nil {
+		panic(err)
+	}
+	defer results.Close()
+
 	lines := strings.Split(string(content), "\n")
 	categories := parseCategories(lines[0])
 	parseBallots(categories, lines[1:])
@@ -51,20 +58,20 @@ func main() {
 		category.PrettyPrint()
 		winners, honorableMention := determineWinner(category, CandidateVotes{})
 		if winners[0].Votes[0] > winners[1].Votes[0] {
-			fmt.Printf("\nGanhador determinado para a categoria %s!\n", category.Title)
-			fmt.Printf("\t↳ %s (%d votos)\n", winners[0].Candidate, winners[0].Votes[0])
-			fmt.Printf("Segundo lugar: %s (%d votos)\n", winners[1].Candidate, winners[1].Votes[0])
+			fmt.Fprintf(results, "\nGanhador determinado para a categoria %s!\n", category.Title)
+			fmt.Fprintf(results, "\t↳ %s (%d votos)\n", winners[0].Candidate, winners[0].Votes[0])
+			fmt.Fprintf(results, "Segundo lugar: %s (%d votos)\n", winners[1].Candidate, winners[1].Votes[0])
 			if honorableMention.Candidate != winners[0].Candidate {
-				fmt.Printf("Menção honrosa: %s (%d votos)\n", honorableMention.Candidate, honorableMention.Votes[0])
+				fmt.Fprintf(results, "Menção honrosa: %s (%d votos)\n", honorableMention.Candidate, honorableMention.Votes[0])
 			}
 		} else {
-			fmt.Printf("\nEmpate na categoria %s!\n", category.Title)
-			fmt.Printf("\t↳ %s | %s (%d votos)\n", winners[0].Candidate, winners[1].Candidate, winners[0].Votes[0])
+			fmt.Fprintf(results, "\nEmpate na categoria %s!\n", category.Title)
+			fmt.Fprintf(results, "\t↳ %s | %s (%d votos)\n", winners[0].Candidate, winners[1].Candidate, winners[0].Votes[0])
 			if honorableMention.Candidate != winners[0].Candidate && honorableMention.Candidate != winners[1].Candidate {
-				fmt.Printf("Menção honrosa: %s (%d votos)\n", honorableMention.Candidate, honorableMention.Votes[0])
+				fmt.Fprintf(results, "Menção honrosa: %s (%d votos)\n", honorableMention.Candidate, honorableMention.Votes[0])
 			}
 		}
-		fmt.Printf("\n")
+		fmt.Fprintf(results, "\n")
 	}
 }
 
@@ -158,7 +165,7 @@ func injectCandidates(category *Category) {
 }
 
 func determineWinner(category Category, honorableMention CandidateVotes) (CandidatesVotes, CandidateVotes) {
-	fmt.Println("Contagem de votos!")
+	fmt.Fprintln(results, "Contagem de votos!")
 	candidatesVotes, validVotes := votesPerCandidate(category)
 
 	cv := rankCandidates(candidatesVotes)
@@ -175,7 +182,7 @@ func determineWinner(category Category, honorableMention CandidateVotes) (Candid
 	last := cv[len(cv)-1].Candidate
 	removeLast(&category, last)
 
-	fmt.Println("Recontagem necessária...")
+	fmt.Fprintln(results, "Recontagem necessária...")
 
 	return determineWinner(category, honorableMention)
 }
@@ -212,7 +219,7 @@ func (cv CandidatesVotes) PrettyPrint() {
 		for pos, votes := range candidate.Votes {
 			text = append(text, fmt.Sprintf("%dº: %d", pos+1, votes))
 		}
-		fmt.Printf("\t↳ %dº: %s [%s]\n", rank+1, candidate.Candidate, strings.Join(text, ", "))
+		fmt.Fprintf(results, "\t↳ %dº: %s [%s]\n", rank+1, candidate.Candidate, strings.Join(text, ", "))
 	}
 }
 
@@ -249,7 +256,7 @@ func checkWinners(cv CandidatesVotes, validVotes int) CandidatesVotes {
 }
 
 func removeLast(category *Category, last string) {
-	fmt.Println("Removendo o último colocado:", last)
+	fmt.Fprintln(results, "Removendo o último colocado:", last)
 	for j, ballot := range category.Ballots {
 		for i, vote := range ballot {
 			if vote == last {
